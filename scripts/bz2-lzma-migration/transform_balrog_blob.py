@@ -12,7 +12,6 @@ import subprocess
 import logging
 import multiprocessing
 
-
 def get_url(url):
     for _ in range(3):
         resp = requests.get(url)
@@ -79,11 +78,17 @@ def make_new_url(url, product):
     return re.sub('product=.*?&', 'product={}&'.format(product), url)
 
 
+def is_a_beta_version(version):
+    m = re.match('Firefox-[\.0-9]+b[0-9]+-build', version)
+    return m is not None
+
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument('release')
     parser.add_argument('output')
+    parser.add_argument('--wnp', action='store_true')
 
     logging.basicConfig(format='%(asctime)s: %(message)s', level=logging.INFO)
 
@@ -93,6 +98,8 @@ if __name__ == '__main__':
         'https://aus5.mozilla.org/api/v1/releases/{}'.format(args.release)
     ).json()
     blob['name'] += '-bz2'
+    if args.wnp:
+        blob['name'] += '-WNP'
 
     # Replace all the fileUrls with the bz2 names
     for channel, updates in blob['fileUrls'].iteritems():
@@ -135,5 +142,29 @@ if __name__ == '__main__':
         c['hashValue'] = hash
         c['filesize'] = size
 
+    logging.info('Removing all beta partial updates for this release blob')
+    for platform_name, platform_data in blob['platforms'].iteritems():
+        if 'locales' not in platform_data:
+            continue
+        for locale_name, locale_data in platform_data['locales'].iteritems():
+            if locale_data.get('partials'):
+                platform_data['locales'][locale_name]['partials'] = \
+                    [d for d in locale_data['partials'] if not is_a_beta_version(d['from'])]
+    for channel in blob['fileUrls'].keys():
+        if 'beta' in channel:
+            del blob['fileUrls'][channel]
+        else:
+            updates = blob['fileUrls'][channel]
+            for version in updates['partials'].keys():
+                if is_a_beta_version(version):
+                    del updates['partials'][version]
+
+
+    if args.wnp:
+        logging.info('Adding whatsnewpage config')
+        blob['actions'] = 'showURL'
+        blob['openURL'] = 'https://www.mozilla.org/%LOCALE%/firefox/56.0/whatsnew/?oldversion=%OLD_VERSION%'
+
+    logging.info('Writing blob to %s', args.output)
     with open(args.output, 'wb') as f:
         json.dump(blob, f, indent=2)

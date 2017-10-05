@@ -4,6 +4,7 @@ import logging
 # strip a beta from a release blob
 # written by kmoir, run like
 # python strip_beta.py Firefox-56.0b12-build1 input.json output.json
+# deprecated by changes to transform_balrog_blob.py
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
